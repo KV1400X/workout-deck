@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#0b0d12">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Workout Deck">
+<title>Workout Deck</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- SETUP -->
+  <section id="setup" class="screen">
+    <header class="hero">
+      <div class="logo" aria-hidden="true"><span class="s">♠</span><span class="h">♥</span><span class="c">♣</span><span class="d">♦</span></div>
+      <h1>Workout Deck</h1>
+      <p class="sub">Shuffle. Draw. Do the reps.</p>
+    </header>
+
+    <button id="resumeBtn" class="btn btn-ghost wide hidden">Resume workout <span id="resumeInfo"></span></button>
+
+    <div class="panel">
+      <div class="panel-title">Presets</div>
+      <div id="presetList" class="preset-grid"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">What each suit means</div>
+      <div id="suitEditor"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Card values</div>
+      <div class="row-note">Number cards = face value. Set the face cards and ace:</div>
+      <div class="face-grid">
+        <label><span>J</span><input type="number" inputmode="numeric" min="0" id="vJ"></label>
+        <label><span>Q</span><input type="number" inputmode="numeric" min="0" id="vQ"></label>
+        <label><span>K</span><input type="number" inputmode="numeric" min="0" id="vK"></label>
+        <label><span>A</span><input type="number" inputmode="numeric" min="0" id="vA"></label>
+      </div>
+      <div class="toggle-row">
+        <span>All face cards (J/Q/K) = same reps</span>
+        <label class="switch"><input type="checkbox" id="faceFixedOn"><i></i></label>
+      </div>
+      <div class="toggle-row sub-row" id="faceFixedRow">
+        <span>Face cards count as</span>
+        <input type="number" inputmode="numeric" min="0" id="faceFixed" class="small-num">
+      </div>
+      <div class="field-label">Reps multiplier</div>
+      <div class="seg" id="multSeg">
+        <button data-m="0.5">×0.5</button><button data-m="1">×1</button><button data-m="1.5">×1.5</button><button data-m="2">×2</button><button data-m="3">×3</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="toggle-row">
+        <span><b>Jokers</b> <small>(adds 2 bonus cards)</small></span>
+        <label class="switch"><input type="checkbox" id="jokersOn"><i></i></label>
+      </div>
+      <div id="jokerFields" class="joker-fields">
+        <input type="text" id="joker1" placeholder="Joker 1, e.g. 2 min rest" maxlength="40">
+        <input type="text" id="joker2" placeholder="Joker 2, e.g. Burpees ×20" maxlength="40">
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Options</div>
+      <div class="toggle-row"><span>Vibrate on draw</span><label class="switch"><input type="checkbox" id="hapticsOn"><i></i></label></div>
+      <div class="toggle-row"><span>Keep screen awake</span><label class="switch"><input type="checkbox" id="wakeOn"><i></i></label></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Save as my preset</div>
+      <div class="save-row">
+        <input type="text" id="presetName" placeholder="Preset name" maxlength="30">
+        <button id="savePresetBtn" class="btn btn-small">Save</button>
+      </div>
+    </div>
+
+    <div class="cta-spacer"></div>
+    <div class="cta-bar">
+      <button id="startBtn" class="btn btn-primary wide">Shuffle &amp; Start</button>
+    </div>
+  </section>
+
+  <!-- WORKOUT -->
+  <section id="workout" class="screen hidden">
+    <div class="topbar">
+      <button id="backBtn" class="icon-btn" aria-label="Setup">
+        <svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <div class="stat"><div class="stat-v" id="timer">0:00</div><div class="stat-l">time</div></div>
+      <div class="stat"><div class="stat-v"><span id="remaining">52</span><small>/<span id="deckSize">52</span></small></div><div class="stat-l">left</div></div>
+      <button id="pauseBtn" class="icon-btn" aria-label="Pause">
+        <svg class="i-pause" viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14" rx="1.2" fill="currentColor"/><rect x="14" y="5" width="4" height="14" rx="1.2" fill="currentColor"/></svg>
+        <svg class="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15l12-7.5z" fill="currentColor"/></svg>
+      </button>
+    </div>
+    <div class="progress"><div id="progressBar"></div></div>
+
+    <div class="stage" id="stage">
+      <div class="pile" id="pile" aria-hidden="true"></div>
+      <div class="card-slot" id="cardSlot"></div>
+      <div class="paused-veil hidden" id="pausedVeil">Paused</div>
+    </div>
+
+    <div class="readout" id="readout">
+      <div class="reps" id="repsText">Tap to draw</div>
+      <div class="exercise" id="exerciseText">&nbsp;</div>
+    </div>
+
+    <div class="actions">
+      <button id="drawBtn" class="btn btn-primary wide">Draw card</button>
+    </div>
+
+    <div class="panel tight">
+      <div class="panel-title">Totals</div>
+      <div id="totals" class="totals"></div>
+    </div>
+
+    <div class="panel tight">
+      <div class="panel-title">Drawn <span id="drawnCount" class="muted"></span></div>
+      <div id="history" class="history"></div>
+    </div>
+
+    <button id="resetBtn" class="btn btn-ghost wide">Shuffle all (reset deck)</button>
+    <div class="bottom-pad"></div>
+  </section>
+
+  <!-- FINISH -->
+  <section id="finish" class="screen hidden">
+    <div class="finish-hero">
+      <div class="trophy" aria-hidden="true">
+        <svg viewBox="0 0 64 64"><path d="M18 8h28v10c0 9-6 16-14 16S18 27 18 18z" fill="url(#gold)"/><path d="M18 12H8c0 9 5 14 12 14M46 12h10c0 9-5 14-12 14" fill="none" stroke="#e8b84a" stroke-width="3"/><rect x="28" y="34" width="8" height="10" fill="#c9962e"/><rect x="20" y="44" width="24" height="7" rx="2" fill="#e8b84a"/><defs><linearGradient id="gold" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#ffe08a"/><stop offset="1" stop-color="#d49a2a"/></linearGradient></defs></svg>
+      </div>
+      <h2>Deck complete</h2>
+      <div class="finish-time" id="finishTime">0:00</div>
+      <div class="muted" id="finishSub"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">Totals</div>
+      <div id="finishTotals" class="totals big"></div>
+    </div>
+    <button id="againBtn" class="btn btn-primary wide">Shuffle all &amp; go again</button>
+    <button id="toSetupBtn" class="btn btn-ghost wide">Change setup</button>
+    <div class="bottom-pad"></div>
+  </section>
+
+  <!-- SHUFFLE OVERLAY -->
+  <div id="shuffleOverlay" class="overlay hidden" aria-hidden="true">
+    <div class="riffle"><div></div><div></div><div></div><div></div><div></div><div></div></div>
+    <div class="overlay-text">Shuffling…</div>
+  </div>
+
+  <!-- MODAL -->
+  <div id="modal" class="overlay modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-box">
+      <div class="modal-title" id="modalTitle"></div>
+      <div class="modal-text" id="modalText"></div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="modalCancel">Cancel</button>
+        <button class="btn btn-danger" id="modalOk">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
