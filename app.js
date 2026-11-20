@@ -28,7 +28,10 @@ const DEFAULTS = {
   mult:1,
   jokers:false, joker1:'2 min rest', joker2:'Burpees ×20',
   haptics:true, wake:true,
+  rest:30,
 };
+const REST_MIN=5, REST_MAX=600, REST_STEP=5;
+const clampRest = v => Math.min(REST_MAX, Math.max(REST_MIN, Math.round(+v||30)));
 
 /* ---------- storage ---------- */
 function clone(o){return JSON.parse(JSON.stringify(o));}
@@ -36,6 +39,7 @@ function load(k,d){try{const v=JSON.parse(localStorage.getItem(k));return v==nul
 function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 let settings = Object.assign(clone(DEFAULTS), load(K_SETTINGS,{}));
 settings.face = Object.assign(clone(DEFAULTS.face), settings.face||{});
+settings.rest = clampRest(settings.rest);
 let custom = load(K_CUSTOM, []);
 let game = load(K_GAME, null);
 const saveSettings = () => save(K_SETTINGS, settings);
@@ -194,7 +198,7 @@ function fisherYates(arr){
 }
 function newGame(){
   const deck = fisherYates(fullDeck(settings.jokers));
-  game = {deck, size: deck.length, drawn: [], accum: 0, runSince: Date.now(), finished: false, startedAt: Date.now()};
+  game = {deck, size: deck.length, drawn: [], accum: 0, runSince: null, finished: false, startedAt: Date.now(), restEnd: null, restDur: 0};
   saveGame();
 }
 const inProgress = () => game && !game.finished && game.drawn.length > 0;
@@ -219,6 +223,7 @@ function show(name){
 }
 
 /* ---------- setup ---------- */
+let editingId = null;
 function allPresets(){ return PRESETS.concat(custom); }
 function renderPresets(){
   const list = $('presetList'); list.innerHTML = '';
@@ -226,15 +231,25 @@ function renderPresets(){
     const b = el('div', 'preset' + (p.id === settings.presetId ? ' on' : '')); b.setAttribute('role','button'); b.tabIndex = 0;
     b.dataset.id = p.id;
     b.innerHTML = `<b>${esc(p.name)}</b><span>${SUITS.map(k => esc(p.suits[k].name)).join(' · ')}</span>` +
-      (p.custom ? `<em class="tag">MINE</em><button class="del" aria-label="Delete preset" data-del="${p.id}">×</button>` : '');
+      (p.custom ? `<em class="tag">MINE</em><button class="del" aria-label="Delete preset" data-del="${p.id}">×</button><button class="edit" aria-label="Edit preset" data-edit="${p.id}">✎</button>` : '');
+    if (p.id === editingId) b.classList.add('editing');
     b.addEventListener('click', e => {
       const del = e.target.closest('[data-del]');
       if (del) { e.stopPropagation(); deletePreset(del.dataset.del); return; }
-      settings.presetId = p.id; settings.suits = clone(p.suits); saveSettings(); renderSetup();
-      toast(`${p.name} loaded`);
+      const ed = e.target.closest('[data-edit]');
+      applyPreset(p);
+      if (ed) { editingId = p.id; $('presetName').value = p.name; renderSetup(); toast(`Editing “${p.name}”: change anything, then Update`); return; }
+      if (editingId && editingId !== p.id) editingId = null;
+      renderSetup(); toast(`${p.name} loaded`);
     });
     list.appendChild(b);
   }
+}
+const PRESET_KEYS = ['face','faceFixedOn','faceFixed','mult','jokers','joker1','joker2','rest'];
+function applyPreset(p){
+  settings.presetId = p.id; settings.suits = clone(p.suits);
+  if (p.custom) for (const k of PRESET_KEYS) if (p[k] !== undefined) settings[k] = clone(p[k]);
+  saveSettings();
 }
 function renderSuitEditor(){
   const box = $('suitEditor'); box.innerHTML = '';
@@ -263,6 +278,11 @@ function renderSetup(){
   $('jokersOn').checked = settings.jokers; $('jokerFields').classList.toggle('hidden', !settings.jokers);
   $('joker1').value = settings.joker1; $('joker2').value = settings.joker2;
   $('hapticsOn').checked = settings.haptics; $('wakeOn').checked = settings.wake;
+  if (document.activeElement !== $('restSec')) $('restSec').value = settings.rest;
+  const ep = editingId && custom.find(x => x.id === editingId);
+  if (editingId && !ep) editingId = null;
+  $('savePresetBtn').textContent = ep ? 'Update' : 'Save';
+  $('cancelEditBtn').classList.toggle('hidden', !ep);
   const ip = inProgress();
   $('resumeBtn').classList.toggle('hidden', !ip);
   if (ip) $('resumeInfo').textContent = `· ${game.deck.length} left`;
@@ -279,6 +299,10 @@ function bindSetup(){
   $('hapticsOn').addEventListener('change', e => { settings.haptics = e.target.checked; saveSettings(); });
   $('wakeOn').addEventListener('change', e => { settings.wake = e.target.checked; saveSettings(); });
   $('savePresetBtn').addEventListener('click', savePreset);
+  $('cancelEditBtn').addEventListener('click', () => { editingId = null; $('presetName').value = ''; renderSetup(); });
+  $('restSec').addEventListener('change', e => setRest(e.target.value));
+  $('setRestMinus').addEventListener('click', () => setRest(settings.rest - REST_STEP));
+  $('setRestPlus').addEventListener('click', () => setRest(settings.rest + REST_STEP));
   $('presetName').addEventListener('keydown', e => { if (e.key === 'Enter') savePreset(); });
   $('resumeBtn').addEventListener('click', () => { show('workout'); });
   $('startBtn').addEventListener('click', async () => {
@@ -289,9 +313,12 @@ function bindSetup(){
 function savePreset(){
   const name = $('presetName').value.trim();
   if (!name) { toast('Give it a name first'); $('presetName').focus(); return; }
-  const existing = custom.find(p => p.name.toLowerCase() === name.toLowerCase());
+  const editing = editingId && custom.find(p => p.id === editingId);
+  const existing = editing || custom.find(p => p.name.toLowerCase() === name.toLowerCase());
   const p = existing || {id: 'c' + Date.now(), name, custom: true};
-  p.suits = clone(settings.suits);
+  p.name = name; p.suits = clone(settings.suits);
+  for (const k of PRESET_KEYS) p[k] = clone(settings[k]);
+  editingId = null;
   if (!existing) custom.push(p);
   save(K_CUSTOM, custom);
   settings.presetId = p.id; saveSettings();
@@ -302,6 +329,7 @@ async function deletePreset(id){
   const p = custom.find(x => x.id === id); if (!p) return;
   if (!(await confirmBox('Delete preset?', `“${p.name}” will be removed.`, 'Delete'))) return;
   custom = custom.filter(x => x.id !== id); save(K_CUSTOM, custom);
+  if (editingId === id) { editingId = null; $('presetName').value = ''; }
   if (settings.presetId === id) settings.presetId = null;
   saveSettings(); renderSetup();
 }
@@ -314,7 +342,7 @@ async function startNew(){
   buzz([15,40,15,40,15]);
   await wait(reduceMotion ? 50 : 1300);
   $('shuffleOverlay').classList.add('hidden');
-  game.runSince = Date.now(); game.accum = 0; saveGame();
+  game.runSince = null; game.accum = 0; game.restEnd = null; saveGame(); // workout timer starts on first card flip
   lastShownId = null;
   show('workout');
 }
@@ -377,11 +405,15 @@ function renderStats(){
   const empty = game.deck.length === 0;
   $('drawBtn').textContent = empty ? 'Finish workout' : (game.drawn.length ? 'Next card' : 'Draw first card');
   $('timer').textContent = fmt(elapsed());
-  $('pauseBtn').classList.toggle('paused', !game.runSince && !game.finished);
-  $('pausedVeil').classList.toggle('hidden', !!game.runSince || game.finished || empty);
+  const started = game.drawn.length > 0;
+  $('pauseBtn').classList.toggle('paused', started && !game.runSince && !game.finished);
+  $('pauseBtn').disabled = !started;
+  $('pausedVeil').classList.toggle('hidden', !started || !!game.runSince || game.finished || empty || !!game.restEnd);
+  renderRest();
 }
 async function draw(){
   if (busy || !game) return;
+  if (game.restEnd) stopRest();
   if (game.deck.length === 0) { finishGame(); return; }
   if (!game.runSince) resumeTimer();
   busy = true; $('drawBtn').disabled = true;
@@ -416,15 +448,21 @@ function renderFinish(){
   $('finishTime').textContent = fmt(elapsed());
   const {rows} = totalsData();
   const all = rows.reduce((a,r) => a + (r.unit === 'reps' ? r.total : 0), 0);
-  $('finishSub').textContent = `${game.drawn.length} cards · total time`;
+  $('finishSub').textContent = `${game.drawn.length} cards · workout time`;
   renderTotals($('finishTotals'));
   $('finishTotals').insertAdjacentHTML('beforeend', `<div class="total-all"><b>${all}</b> total reps</div>`);
 }
 function bindWorkout(){
   $('drawBtn').addEventListener('click', draw);
   $('cardSlot').addEventListener('click', draw);
-  $('backBtn').addEventListener('click', () => show('setup'));
-  $('pauseBtn').addEventListener('click', () => { if (!game || game.finished) return; game.runSince ? pauseTimer() : resumeTimer(); renderStats(); });
+  $('backBtn').addEventListener('click', () => { if (game && game.restEnd) stopRest(); show('setup'); });
+  $('pauseBtn').addEventListener('click', () => { if (!game || game.finished || !game.drawn.length) return; if (game.runSince) { stopRest(); pauseTimer(); } else resumeTimer(); renderStats(); });
+  $('restBtn').addEventListener('click', startRest);
+  $('restMinus').addEventListener('click', () => setRest(settings.rest - REST_STEP));
+  $('restPlus').addEventListener('click', () => setRest(settings.rest + REST_STEP));
+  $('restSkip').addEventListener('click', e => { e.stopPropagation(); stopRest(); draw(); });
+  $('restCancel').addEventListener('click', e => { e.stopPropagation(); stopRest(); renderStats(); });
+  $('restVeil').addEventListener('click', e => e.stopPropagation());
   $('pausedVeil').addEventListener('click', () => { resumeTimer(); renderStats(); });
   $('resetBtn').addEventListener('click', async () => {
     if (game && game.drawn.length && game.deck.length && !(await confirmBox('Shuffle all?', `${game.drawn.length} cards drawn, ${game.deck.length} left. This puts every card back and resets the timer.`, 'Shuffle all'))) return;
@@ -432,8 +470,48 @@ function bindWorkout(){
   });
   $('againBtn').addEventListener('click', () => startNew());
   $('toSetupBtn').addEventListener('click', () => show('setup'));
-  setInterval(() => { if (screen === 'workout' && game) $('timer').textContent = fmt(elapsed()); }, 500);
+  setInterval(() => { if (screen === 'workout' && game) $('timer').textContent = fmt(elapsed()); restTick(); }, 250);
 }
+
+/* ---------- rest timer (timestamp based, no sound) ---------- */
+let lastRestSec = null;
+function setRest(v){
+  settings.rest = clampRest(v); saveSettings();
+  $('restSec').value = settings.rest;
+  $('restLabel').textContent = restFmt(settings.rest);
+}
+const restFmt = sec => sec >= 60 ? `${Math.floor(sec/60)}:${String(sec%60).padStart(2,'0')}` : `${sec}s`;
+function startRest(){
+  if (!game || game.finished || busy || game.deck.length === 0) return;
+  if (game.drawn.length) resumeTimer();
+  game.restDur = settings.rest * 1000; game.restEnd = Date.now() + game.restDur; lastRestSec = null;
+  saveGame(); buzz(20); renderStats(); restTick();
+}
+function stopRest(){ if (game && game.restEnd) { game.restEnd = null; saveGame(); } lastRestSec = null; renderRest(); }
+function renderRest(){
+  const on = !!(game && game.restEnd);
+  $('restVeil').classList.toggle('hidden', !on);
+  $('restLabel').textContent = restFmt(settings.rest);
+  const empty = !game || game.deck.length === 0 || game.finished;
+  $('restBtn').disabled = empty || on; $('restMinus').disabled = $('restPlus').disabled = false;
+}
+function restTick(){
+  if (!game || !game.restEnd || screen !== 'workout') return;
+  const left = game.restEnd - Date.now();
+  if (left <= 0) {
+    game.restEnd = null; saveGame(); lastRestSec = null; renderRest();
+    buzz([200,90,200,90,350]);
+    const f = $('flash'); f.classList.remove('go'); void f.offsetWidth; f.classList.add('go');
+    if (!busy) draw(); else setTimeout(draw, 600);
+    return;
+  }
+  const sec = Math.ceil(left / 1000);
+  $('restCount').textContent = sec >= 60 ? restFmt(sec) : sec;
+  $('restRing').style.setProperty('--p', Math.max(0, Math.min(1, left / (game.restDur || 1))).toFixed(4));
+  $('restVeil').classList.toggle('last3', sec <= 3);
+  if (sec !== lastRestSec) { if (lastRestSec !== null && sec <= 3) buzz(35); lastRestSec = sec; }
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') restTick(); });
 
 /* ---------- helpers ---------- */
 const wait = ms => new Promise(r => setTimeout(r, ms));
@@ -465,5 +543,5 @@ if (game && game.finished) show('finish');
 else if (inProgress()) show('workout');
 else { if (game && !game.drawn.length) game = null; show('setup'); }
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(()=>{});
-window.__wd = { get game(){ return game; }, get settings(){ return settings; }, cardSVG: cardFrontSVG };
+window.__wd = { get game(){ return game; }, get settings(){ return settings; }, get custom(){ return custom; }, cardSVG: cardFrontSVG, version: 2 };
 })();

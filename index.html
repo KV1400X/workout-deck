@@ -12,7 +12,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="styles.css?v=2">
 </head>
 <body>
 <div id="app">
@@ -73,15 +73,21 @@
 
     <div class="panel">
       <div class="panel-title">Options</div>
-      <div class="toggle-row"><span>Vibrate on draw</span><label class="switch"><input type="checkbox" id="hapticsOn"><i></i></label></div>
+      <div class="toggle-row">
+        <span><b>Rest timer</b> <small>(then next card flips)</small></span>
+        <div class="stepper"><button type="button" id="setRestMinus" aria-label="Less rest">−</button><input type="number" inputmode="numeric" min="5" max="600" id="restSec" aria-label="Rest seconds"><span class="st-u">s</span><button type="button" id="setRestPlus" aria-label="More rest">+</button></div>
+      </div>
+      <div class="toggle-row"><span>Vibrate on draw &amp; rest end</span><label class="switch"><input type="checkbox" id="hapticsOn"><i></i></label></div>
       <div class="toggle-row"><span>Keep screen awake</span><label class="switch"><input type="checkbox" id="wakeOn"><i></i></label></div>
     </div>
 
     <div class="panel">
       <div class="panel-title">Save as my preset</div>
+      <div class="row-note" id="presetNote">Saves the suits, card values, multiplier, jokers and rest time above. Tap ✎ on one of your presets to edit it.</div>
       <div class="save-row">
         <input type="text" id="presetName" placeholder="Preset name" maxlength="30">
         <button id="savePresetBtn" class="btn btn-small">Save</button>
+        <button id="cancelEditBtn" class="btn btn-small hidden">Cancel</button>
       </div>
     </div>
 
@@ -110,6 +116,13 @@
       <div class="pile" id="pile" aria-hidden="true"></div>
       <div class="card-slot" id="cardSlot"></div>
       <div class="paused-veil hidden" id="pausedVeil">Paused</div>
+      <div class="rest-veil hidden" id="restVeil">
+        <div class="rest-ring" id="restRing"><div class="rest-in"><div class="rest-l">Rest</div><div class="rest-v" id="restCount">30</div></div></div>
+        <div class="rest-acts">
+          <button id="restCancel" class="btn btn-ghost">Cancel</button>
+          <button id="restSkip" class="btn btn-small">Next card now</button>
+        </div>
+      </div>
     </div>
 
     <div class="readout" id="readout">
@@ -119,6 +132,11 @@
 
     <div class="actions">
       <button id="drawBtn" class="btn btn-primary wide">Draw card</button>
+      <div class="rest-row">
+        <button id="restMinus" class="icon-btn rest-adj" aria-label="Less rest">−</button>
+        <button id="restBtn" class="btn btn-ghost">Rest <b id="restLabel">30s</b></button>
+        <button id="restPlus" class="icon-btn rest-adj" aria-label="More rest">+</button>
+      </div>
     </div>
 
     <div class="panel tight">
@@ -173,7 +191,8 @@
   </div>
 
   <div id="toast" class="toast"></div>
+  <div id="flash" class="flash" aria-hidden="true"></div>
 </div>
-<script src="app.js"></script>
+<script src="app.js?v=2"></script>
 </body>
 </html>
